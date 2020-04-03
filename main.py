@@ -197,18 +197,14 @@ def score_window(window,player):
     unique, counts = np.unique(window, return_counts=True)
     count_dict = dict(zip(unique, counts))
     if player in count_dict:
-        if count_dict[player] == 4:
-            score += 100
-        elif EMPTY in count_dict and count_dict[player] == 3 and count_dict[EMPTY] == 1:
+        if EMPTY in count_dict and count_dict[player] == 3 and count_dict[EMPTY] == 1:
             score += 15
         elif EMPTY in count_dict and count_dict[player] == 2 and count_dict[EMPTY] == 2:
-            score += 5
+            score += 10
         elif opponent in count_dict and count_dict[player] == 1 and count_dict[opponent] == 3:
-            score += 50
+            score += 100
         elif opponent in count_dict and EMPTY in count_dict and count_dict[EMPTY] == 1 and count_dict[opponent] == 3:
-            score -= 20
-        elif opponent in count_dict and count_dict[opponent] == 2 and count_dict[player] == 1:
-            score+= 10
+            score -= 100
 
     return score
 
@@ -265,32 +261,44 @@ def score_all_positions(board, piece):
     ## Score center column
     center_array = [int(i) for i in list(board[:, COL_COUNT//2])]
     center_count = center_array.count(piece)
-    score += center_count * 3
-
+    score += center_count * 10
+    for r in range(len(center_array)- 3):
+        window = center_array[r: r + WINDOW_LENGTH]
+        score += (score_window(window,piece) * 10)
     ## Score Horizontal
+    multiplier = 1
     for r in range(ROW_COUNT):
         row_array = [int(i) for i in list(board[r,:])]
         for c in range(COL_COUNT-3):
             window = row_array[c:c+WINDOW_LENGTH]
-            score += score_window(window, piece)
+            score += score_window(window, piece) * multiplier
+        multiplier = r + 1
 
     ## Score Vertical
+    multiplier = 1
     for c in range(COL_COUNT):
         col_array = [int(i) for i in list(board[:,c])]
         for r in range(ROW_COUNT-3):
             window = col_array[r:r+WINDOW_LENGTH]
-            score += score_window(window, piece)
+            score += score_window(window, piece) * multiplier
+        if(c < COL_COUNT // 2):
+            multiplier += 1
+        else:
+            multiplier -= 1
 
     ## Score posiive sloped diagonal
+    multiplier = 1
     for r in range(ROW_COUNT-3):
         for c in range(COL_COUNT-3):
             window = [board[r+i][c+i] for i in range(WINDOW_LENGTH)]
-            score += score_window(window, piece)
-
+            score += score_window(window, piece) * multiplier
+        multiplier = r + 1
+    multiplier = 1
     for r in range(ROW_COUNT-3):
         for c in range(COL_COUNT-3):
             window = [board[r+3-i][c+i] for i in range(WINDOW_LENGTH)]
-            score += score_window(window, piece)
+            score += score_window(window, piece) * multiplier
+        multiplier = r + 1
 
     return score
 
@@ -299,29 +307,33 @@ def score_all_positions(board, piece):
 def is_terminal_node(board):
     return check_all_winning_moves(board,PLAYER1) or check_all_winning_moves(board,PLAYER2) or len(get_valid_cols(board)) == 0
 
-def minimax(board,depth,alpha,beta,maximizing_player=PLAYER2):
+def minimax(board,depth,alpha,beta,maximizing_player,current_player):
+    if current_player == 1:
+        opponent = 2
+    else:
+        opponent = 1
     valid_locations = get_valid_cols(board)
     if depth == 0 or is_terminal_node(board):
         if is_terminal_node(board):
-            if check_all_winning_moves(board,PLAYER2):
-                return 10000000, None
-            elif check_all_winning_moves(board,PLAYER1):
-                return -100000, None
+            if check_all_winning_moves(board,current_player):
+                return 100000000000000, None
+            elif check_all_winning_moves(board,opponent):
+                return -100000000000000000, None
             else:
-                return -20, None
+                return 0, None
         else:
-            return score_all_positions(board,PLAYER2), None
+            return score_all_positions(board,current_player), None
     column = random.choice(valid_locations)
     if maximizing_player:
         value = -math.inf
         for col in valid_locations:
             board_copy = board.copy()
-            board_copy, _ = play_move(board_copy,col,PLAYER2)
-            new_score, _ = minimax(board_copy,depth - 1,alpha,beta, False)
+            board_copy, _ = play_move(board_copy,col,current_player)
+            new_score, _ = minimax(board_copy,depth - 1,alpha,beta, False,current_player)
             if new_score > value:
                 value = new_score
                 column = col
-            alpha = max(alpha,new_score)
+            alpha = max(alpha,value)
             if(beta <= alpha):
                 break
         return value, column
@@ -329,12 +341,12 @@ def minimax(board,depth,alpha,beta,maximizing_player=PLAYER2):
         value = math.inf
         for col in valid_locations:
             board_copy = board.copy()
-            board_copy, _ = play_move( board_copy, col, PLAYER1)
-            new_score, _ = minimax(board_copy, depth - 1,alpha,beta, True)
+            board_copy, _ = play_move( board_copy, col, opponent)
+            new_score, _ = minimax(board_copy, depth - 1,alpha,beta, True,current_player)
             if(new_score < value):
                 value = new_score
                 column = col
-            beta = min(beta,new_score)
+            beta = min(beta,value)
             if(beta <= alpha):
                 break
         return value, column
@@ -366,11 +378,11 @@ def main():
     while not game_over:
         player = turn % 2 + 1
 
-        for event in pygame.event.get() and game_mode != 3:
+        for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit(0)
-            if event.type == pygame.MOUSEMOTION:
+            if event.type == pygame.MOUSEMOTION and game_mode != 3:
                 pygame.draw.rect(screen,BLACK,(0,0,width,SQUARE_SIZE))
                 posx = event.pos[0]
                 if player == 1:
@@ -383,7 +395,7 @@ def main():
                                    RADIUS)
                 pygame.display.update()
 
-            if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.type == pygame.MOUSEBUTTONDOWN and game_mode != 3:
                 pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARE_SIZE))
                 # Player 1 input
                 if turn % 2 == 0:
@@ -446,9 +458,12 @@ def main():
                             excluding += "{},".format(col)
                         print("Invalid col pick again excluding {} ".format(excluding))
         if game_mode == 2 and player == 2:
-            score, col = minimax(board,4,-math.inf,math.inf,True)
+
+
+            score, col = minimax(board,6,-math.inf,math.inf,True, player)
             board,row = play_move(board,col,player)
             draw_board(board,screen)
+
             if check_win(board, row, col,player):
                 print("Congrats ai {} won ".format(player))
                 game_over = True
@@ -460,7 +475,34 @@ def main():
                 screen.blit(text, [text_x, text_y])
                 pygame.display.update()
             turn += 1
+        if game_mode == 3:
+            difficulty = 7
 
+            score, col = minimax(board, difficulty, -math.inf, math.inf, True, player)
+            print("Score for player {} is {} with col {}".format(player,score, col))
+            board, row = play_move(board, col, player)
+            draw_board(board, screen)
+            pygame.time.wait(3000)
+            if len(get_valid_cols(board)) == 0:
+                print("Draw ")
+                game_over = True
+                text = font.render("Draw click to play again", True, WHITE)
+                text_rect = text.get_rect()
+                text_x = screen.get_width() / 2 - text_rect.width / 2
+                text_y = screen.get_height() / 2 - text_rect.height / 2
+                screen.blit(text, [text_x, text_y])
+                pygame.display.update()
+            elif check_win(board, row, col, player) :
+                print("Congrats ai {} won ".format(player))
+                game_over = True
+                # If game over is true, draw game over
+                text = font.render("AI {} wins!! Click to play again".format(player), True, WHITE)
+                text_rect = text.get_rect()
+                text_x = screen.get_width() / 2 - text_rect.width / 2
+                text_y = screen.get_height() / 2 - text_rect.height / 2
+                screen.blit(text, [text_x, text_y])
+                pygame.display.update()
+            turn += 1
 
         if game_over:
             starting_player = (starting_player + 1) % 2
